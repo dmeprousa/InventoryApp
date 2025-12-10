@@ -22,8 +22,9 @@ SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
 GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
+# These should match your Google Sheet dropdowns
 STATUS_OPTIONS = ["In Stock", "Out on Rental", "Sold"]
-CONDITION_OPTIONS = ["New", "Used", "Refurbished"]
+CONDITION_OPTIONS = ["New", "Available in Stock", "Used", "Refurbished"]
 CATEGORIES = [
     "Hospital Beds & Accessories", "Mobility Aids", "Respiratory Devices", "Wheelchairs",
     "Bathing & Daily Living Aids", "Patient Lifts & Slings", "Diabetic Supplies",
@@ -133,7 +134,6 @@ def get_sheets_service():
     # Check if we have token in Streamlit secrets (CLOUD)
     if 'google_oauth' in st.secrets:
         try:
-            # Build credentials from secrets
             creds_info = {
                 'token': st.secrets['google_oauth']['token'],
                 'refresh_token': st.secrets['google_oauth']['refresh_token'],
@@ -145,7 +145,6 @@ def get_sheets_service():
             
             creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
             
-            # Refresh if expired
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             
@@ -155,7 +154,7 @@ def get_sheets_service():
             st.error(f"Error loading credentials from secrets: {e}")
             st.stop()
     
-    # Fallback to local OAuth (for local development)
+    # Fallback to local OAuth
     creds = None
     
     if os.path.exists('token.json'):
@@ -178,10 +177,11 @@ def get_sheets_service():
 
 
 def append_to_sheet(service, items):
-    """Add items to Google Sheet"""
+    """Add items to Google Sheet - matching your column structure"""
     try:
-        # Get current data to determine next ID
         sheet = service.spreadsheets()
+        
+        # Get current row count to determine next ID
         result = sheet.values().get(
             spreadsheetId=SHEET_ID,
             range='A:A'
@@ -189,41 +189,58 @@ def append_to_sheet(service, items):
         
         existing_rows = len(result.get('values', []))
         
-        # Prepare rows
+        # Prepare rows matching YOUR sheet columns:
+        # A: Item ID/SKU
+        # B: Item Name
+        # C: Category
+        # D: Status
+        # E: Customer/Hospice Name
+        # F: Pickup Date
+        # G: Condition
+        # H: Location
+        # I: (empty)
+        # J: Serial/Lot Number
+        # K: Purchase Date
+        # L: Warranty Expiration
+        # M: Maintenance Due
+        # N: Condition/Status
+        # O: Supplier Information (Manufacturer)
+        # P: Unit Cost
+        # Q: Total Value
+        # R: Reorder Level
+        # S: Notes
+        
         rows = []
         for idx, item in enumerate(items):
             item_id = f"DME-{str(existing_rows + idx).zfill(3)}"
-            date_added = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             row = [
-                item_id,
-                item.get('item_name', ''),
-                item.get('category', ''),
-                item.get('status', ''),
-                item.get('serial', ''),
-                item.get('manufacturer', ''),
-                item.get('condition', ''),
-                item.get('location', ''),
-                item.get('notes', ''),
-                date_added
+                item_id,                              # A: Item ID/SKU
+                item.get('item_name', ''),            # B: Item Name
+                item.get('category', ''),             # C: Category
+                item.get('status', ''),               # D: Status
+                item.get('customer_name', ''),        # E: Customer/Hospice Name
+                item.get('pickup_date', ''),          # F: Pickup Date
+                item.get('condition', ''),            # G: Condition
+                item.get('location', ''),             # H: Location
+                '',                                   # I: (empty)
+                item.get('serial', ''),               # J: Serial/Lot Number
+                '',                                   # K: Purchase Date
+                '',                                   # L: Warranty Expiration
+                '',                                   # M: Maintenance Due
+                '',                                   # N: Condition/Status
+                item.get('manufacturer', ''),         # O: Supplier Information
+                item.get('unit_cost', ''),            # P: Unit Cost
+                '',                                   # Q: Total Value
+                item.get('reorder_level', ''),        # R: Reorder Level
+                item.get('notes', ''),                # S: Notes
             ]
             rows.append(row)
         
-        # If sheet is empty, add headers first
-        if existing_rows == 0:
-            headers = [['Item ID', 'Item Name', 'Category', 'Status', 'Serial Number', 
-                       'Manufacturer', 'Condition', 'Location', 'Notes', 'Date Added']]
-            sheet.values().append(
-                spreadsheetId=SHEET_ID,
-                range='A1',
-                valueInputOption='RAW',
-                body={'values': headers}
-            ).execute()
-        
-        # Append data
+        # Append data (skip headers - they already exist)
         sheet.values().append(
             spreadsheetId=SHEET_ID,
-            range='A:J',
+            range='A:S',
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': rows}
@@ -268,9 +285,14 @@ def main():
     if 'all_devices' not in st.session_state:
         st.session_state.all_devices = []
     
-    # Step 1: Status
-    st.subheader("Step 1: Select Status")
-    selected_status = st.selectbox("Equipment Status:", STATUS_OPTIONS)
+    # Step 1: Status & Basic Info
+    st.subheader("Step 1: Select Status & Info")
+    
+    col_status, col_cond = st.columns(2)
+    with col_status:
+        selected_status = st.selectbox("Equipment Status:", STATUS_OPTIONS)
+    with col_cond:
+        selected_condition = st.selectbox("Condition:", CONDITION_OPTIONS)
     
     # Step 2: Upload
     st.subheader("Step 2: Upload Photos or ZIP")
@@ -317,7 +339,6 @@ def main():
             for idx, img_data in enumerate(all_images):
                 status_text.text(f"Processing {img_data['filename']}... ({idx+1}/{len(all_images)})")
                 
-                # Get ALL devices from this image
                 devices = extract_equipment_data(img_data['bytes'])
                 
                 for device in devices:
@@ -325,7 +346,8 @@ def main():
                         'filename': img_data['filename'],
                         'image_bytes': img_data['bytes'],
                         'extracted': device,
-                        'status': selected_status
+                        'status': selected_status,
+                        'condition': selected_condition
                     })
                     total_devices += 1
                 
@@ -352,7 +374,8 @@ def main():
                     st.caption(f"From: {data['filename']}")
                 
                 with col2:
-                    c1, c2 = st.columns(2)
+                    # Row 1: Basic Info
+                    c1, c2, c3 = st.columns(3)
                     
                     with c1:
                         item_name = st.text_input(
@@ -360,19 +383,8 @@ def main():
                             value=data['extracted'].get('item_name', ''), 
                             key=f"name_{idx}"
                         )
-                        serial = st.text_input(
-                            "Serial Number:", 
-                            value=data['extracted'].get('serial', ''), 
-                            key=f"serial_{idx}"
-                        )
-                        manufacturer = st.text_input(
-                            "Manufacturer:", 
-                            value=data['extracted'].get('manufacturer', ''), 
-                            key=f"mfr_{idx}"
-                        )
                     
                     with c2:
-                        # Find matching category
                         cat_value = data['extracted'].get('category', 'Other Medical Equipment')
                         cat_idx = len(CATEGORIES) - 1
                         for i, cat in enumerate(CATEGORIES):
@@ -386,28 +398,74 @@ def main():
                             index=cat_idx, 
                             key=f"cat_{idx}"
                         )
+                    
+                    with c3:
+                        status = st.selectbox(
+                            "Status:", 
+                            STATUS_OPTIONS, 
+                            index=STATUS_OPTIONS.index(data['status']),
+                            key=f"status_{idx}"
+                        )
+                    
+                    # Row 2: More Details
+                    c4, c5, c6 = st.columns(3)
+                    
+                    with c4:
+                        serial = st.text_input(
+                            "Serial/Lot Number:", 
+                            value=data['extracted'].get('serial', ''), 
+                            key=f"serial_{idx}"
+                        )
+                    
+                    with c5:
+                        manufacturer = st.text_input(
+                            "Manufacturer/Supplier:", 
+                            value=data['extracted'].get('manufacturer', ''), 
+                            key=f"mfr_{idx}"
+                        )
+                    
+                    with c6:
+                        cond_idx = 0
+                        if data.get('condition') in CONDITION_OPTIONS:
+                            cond_idx = CONDITION_OPTIONS.index(data['condition'])
+                        
                         condition = st.selectbox(
                             "Condition:", 
-                            [""] + CONDITION_OPTIONS, 
+                            CONDITION_OPTIONS, 
+                            index=cond_idx,
                             key=f"cond_{idx}"
                         )
+                    
+                    # Row 3: Location & Notes
+                    c7, c8 = st.columns(2)
+                    
+                    with c7:
                         location = st.text_input(
                             "Location:", 
                             key=f"loc_{idx}"
                         )
                     
-                    notes = st.text_input("Notes:", key=f"notes_{idx}")
-                    st.caption(f"Status: **{data['status']}** | Will get ID: **DME-{str(idx+1).zfill(3)}**")
+                    with c8:
+                        notes = st.text_input(
+                            "Notes:", 
+                            key=f"notes_{idx}"
+                        )
+                    
+                    st.caption(f"Will get ID: **DME-{str(idx+1).zfill(3)}**")
                     
                     items_to_add.append({
                         'item_name': item_name,
                         'category': category,
-                        'status': data['status'],
+                        'status': status,
+                        'condition': condition,
                         'serial': serial,
                         'manufacturer': manufacturer,
-                        'condition': condition,
                         'location': location,
-                        'notes': notes
+                        'notes': notes,
+                        'customer_name': '',
+                        'pickup_date': '',
+                        'unit_cost': '',
+                        'reorder_level': ''
                     })
         
         st.divider()
@@ -443,7 +501,7 @@ def main():
                         else:
                             st.error("Failed to add to sheet. Check error above.")
                     else:
-                        st.error("Could not connect to Google Sheets. Check oauth_credentials.json")
+                        st.error("Could not connect to Google Sheets.")
 
 
 if __name__ == "__main__":
