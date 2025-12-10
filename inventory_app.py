@@ -176,6 +176,66 @@ def get_sheets_service():
     
     return build('sheets', 'v4', credentials=creds)
 
+
+def append_to_sheet(service, items):
+    """Add items to Google Sheet"""
+    try:
+        # Get current data to determine next ID
+        sheet = service.spreadsheets()
+        result = sheet.values().get(
+            spreadsheetId=SHEET_ID,
+            range='A:A'
+        ).execute()
+        
+        existing_rows = len(result.get('values', []))
+        
+        # Prepare rows
+        rows = []
+        for idx, item in enumerate(items):
+            item_id = f"DME-{str(existing_rows + idx).zfill(3)}"
+            date_added = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            row = [
+                item_id,
+                item.get('item_name', ''),
+                item.get('category', ''),
+                item.get('status', ''),
+                item.get('serial', ''),
+                item.get('manufacturer', ''),
+                item.get('condition', ''),
+                item.get('location', ''),
+                item.get('notes', ''),
+                date_added
+            ]
+            rows.append(row)
+        
+        # If sheet is empty, add headers first
+        if existing_rows == 0:
+            headers = [['Item ID', 'Item Name', 'Category', 'Status', 'Serial Number', 
+                       'Manufacturer', 'Condition', 'Location', 'Notes', 'Date Added']]
+            sheet.values().append(
+                spreadsheetId=SHEET_ID,
+                range='A1',
+                valueInputOption='RAW',
+                body={'values': headers}
+            ).execute()
+        
+        # Append data
+        sheet.values().append(
+            spreadsheetId=SHEET_ID,
+            range='A:J',
+            valueInputOption='RAW',
+            insertDataOption='INSERT_ROWS',
+            body={'values': rows}
+        ).execute()
+        
+        return True, len(rows)
+        
+    except Exception as e:
+        st.error(f"❌ Sheet Error: {str(e)}")
+        return False, 0
+
+
 # ================== MAIN APP ==================
 
 def main():
@@ -384,6 +444,7 @@ def main():
                             st.error("Failed to add to sheet. Check error above.")
                     else:
                         st.error("Could not connect to Google Sheets. Check oauth_credentials.json")
+
 
 if __name__ == "__main__":
     main()
