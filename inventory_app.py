@@ -22,9 +22,7 @@ SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
 GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# These should match your Google Sheet dropdowns
 STATUS_OPTIONS = ["In Stock", "Out on Rental", "Sold"]
-CONDITION_OPTIONS = ["New", "Available in Stock", "Used", "Refurbished"]
 CATEGORIES = [
     "Hospital Beds & Accessories", "Mobility Aids", "Respiratory Devices", "Wheelchairs",
     "Bathing & Daily Living Aids", "Patient Lifts & Slings", "Diabetic Supplies",
@@ -131,7 +129,6 @@ def extract_images_from_zip(zip_file):
 def get_sheets_service():
     """Get Google Sheets service using token from secrets"""
     
-    # Check if we have token in Streamlit secrets (CLOUD)
     if 'google_oauth' in st.secrets:
         try:
             creds_info = {
@@ -154,7 +151,6 @@ def get_sheets_service():
             st.error(f"Error loading credentials from secrets: {e}")
             st.stop()
     
-    # Fallback to local OAuth
     creds = None
     
     if os.path.exists('token.json'):
@@ -177,38 +173,34 @@ def get_sheets_service():
 
 
 def append_to_sheet(service, items):
-    """Add items to Google Sheet - matching your column structure"""
+    """Add items to Google Sheet - matching column structure
+    
+    Columns:
+    A: Item ID/SKU
+    B: Item Name
+    C: Category
+    D: Status
+    E: Customer/Hospice Name
+    F: Pickup Date
+    G: Condition (EMPTY - use dropdown in Sheet)
+    H: Location (EMPTY - use dropdown in Sheet)
+    I: (empty)
+    J: Serial/Lot Number
+    K: Purchase Date
+    L: Warranty Expiration
+    M: Maintenance Due
+    N: Condition/Status
+    O: Supplier Information (Manufacturer)
+    """
     try:
         sheet = service.spreadsheets()
         
-        # Get current row count to determine next ID
         result = sheet.values().get(
             spreadsheetId=SHEET_ID,
             range='A:A'
         ).execute()
         
         existing_rows = len(result.get('values', []))
-        
-        # Prepare rows matching YOUR sheet columns:
-        # A: Item ID/SKU
-        # B: Item Name
-        # C: Category
-        # D: Status
-        # E: Customer/Hospice Name
-        # F: Pickup Date
-        # G: Condition
-        # H: Location
-        # I: (empty)
-        # J: Serial/Lot Number
-        # K: Purchase Date
-        # L: Warranty Expiration
-        # M: Maintenance Due
-        # N: Condition/Status
-        # O: Supplier Information (Manufacturer)
-        # P: Unit Cost
-        # Q: Total Value
-        # R: Reorder Level
-        # S: Notes
         
         rows = []
         for idx, item in enumerate(items):
@@ -219,10 +211,10 @@ def append_to_sheet(service, items):
                 item.get('item_name', ''),            # B: Item Name
                 item.get('category', ''),             # C: Category
                 item.get('status', ''),               # D: Status
-                item.get('customer_name', ''),        # E: Customer/Hospice Name
-                item.get('pickup_date', ''),          # F: Pickup Date
-                item.get('condition', ''),            # G: Condition
-                item.get('location', ''),             # H: Location
+                '',                                   # E: Customer/Hospice Name (empty)
+                '',                                   # F: Pickup Date (empty)
+                '',                                   # G: Condition (EMPTY - dropdown)
+                '',                                   # H: Location (EMPTY - dropdown)
                 '',                                   # I: (empty)
                 item.get('serial', ''),               # J: Serial/Lot Number
                 '',                                   # K: Purchase Date
@@ -230,17 +222,12 @@ def append_to_sheet(service, items):
                 '',                                   # M: Maintenance Due
                 '',                                   # N: Condition/Status
                 item.get('manufacturer', ''),         # O: Supplier Information
-                item.get('unit_cost', ''),            # P: Unit Cost
-                '',                                   # Q: Total Value
-                item.get('reorder_level', ''),        # R: Reorder Level
-                item.get('notes', ''),                # S: Notes
             ]
             rows.append(row)
         
-        # Append data (skip headers - they already exist)
         sheet.values().append(
             spreadsheetId=SHEET_ID,
-            range='A:S',
+            range='A:O',
             valueInputOption='RAW',
             insertDataOption='INSERT_ROWS',
             body={'values': rows}
@@ -280,19 +267,17 @@ def main():
         st.write("✅ Each device = separate row")
         st.write("✅ Auto Item ID (DME-XXX)")
         st.write("✅ ZIP file support")
+        
+        st.header("📝 Note")
+        st.info("Condition & Location: Use dropdown in Google Sheet after adding")
     
     # Initialize session state
     if 'all_devices' not in st.session_state:
         st.session_state.all_devices = []
     
-    # Step 1: Status & Basic Info
-    st.subheader("Step 1: Select Status & Info")
-    
-    col_status, col_cond = st.columns(2)
-    with col_status:
-        selected_status = st.selectbox("Equipment Status:", STATUS_OPTIONS)
-    with col_cond:
-        selected_condition = st.selectbox("Condition:", CONDITION_OPTIONS)
+    # Step 1: Status
+    st.subheader("Step 1: Select Status")
+    selected_status = st.selectbox("Equipment Status:", STATUS_OPTIONS)
     
     # Step 2: Upload
     st.subheader("Step 2: Upload Photos or ZIP")
@@ -346,8 +331,7 @@ def main():
                         'filename': img_data['filename'],
                         'image_bytes': img_data['bytes'],
                         'extracted': device,
-                        'status': selected_status,
-                        'condition': selected_condition
+                        'status': selected_status
                     })
                     total_devices += 1
                 
@@ -360,6 +344,9 @@ def main():
     # Step 3: Review & Add
     if st.session_state.all_devices:
         st.subheader(f"Step 3: Review {len(st.session_state.all_devices)} Device(s)")
+        
+        # Info box
+        st.info("💡 **Condition** و **Location** هتختارهم من الـ Dropdown في Google Sheet بعد الإضافة")
         
         items_to_add = []
         
@@ -375,13 +362,18 @@ def main():
                 
                 with col2:
                     # Row 1: Basic Info
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2 = st.columns(2)
                     
                     with c1:
                         item_name = st.text_input(
                             "Item Name:", 
                             value=data['extracted'].get('item_name', ''), 
                             key=f"name_{idx}"
+                        )
+                        serial = st.text_input(
+                            "Serial/Lot Number:", 
+                            value=data['extracted'].get('serial', ''), 
+                            key=f"serial_{idx}"
                         )
                     
                     with c2:
@@ -398,74 +390,20 @@ def main():
                             index=cat_idx, 
                             key=f"cat_{idx}"
                         )
-                    
-                    with c3:
-                        status = st.selectbox(
-                            "Status:", 
-                            STATUS_OPTIONS, 
-                            index=STATUS_OPTIONS.index(data['status']),
-                            key=f"status_{idx}"
-                        )
-                    
-                    # Row 2: More Details
-                    c4, c5, c6 = st.columns(3)
-                    
-                    with c4:
-                        serial = st.text_input(
-                            "Serial/Lot Number:", 
-                            value=data['extracted'].get('serial', ''), 
-                            key=f"serial_{idx}"
-                        )
-                    
-                    with c5:
                         manufacturer = st.text_input(
                             "Manufacturer/Supplier:", 
                             value=data['extracted'].get('manufacturer', ''), 
                             key=f"mfr_{idx}"
                         )
                     
-                    with c6:
-                        cond_idx = 0
-                        if data.get('condition') in CONDITION_OPTIONS:
-                            cond_idx = CONDITION_OPTIONS.index(data['condition'])
-                        
-                        condition = st.selectbox(
-                            "Condition:", 
-                            CONDITION_OPTIONS, 
-                            index=cond_idx,
-                            key=f"cond_{idx}"
-                        )
-                    
-                    # Row 3: Location & Notes
-                    c7, c8 = st.columns(2)
-                    
-                    with c7:
-                        location = st.text_input(
-                            "Location:", 
-                            key=f"loc_{idx}"
-                        )
-                    
-                    with c8:
-                        notes = st.text_input(
-                            "Notes:", 
-                            key=f"notes_{idx}"
-                        )
-                    
-                    st.caption(f"Will get ID: **DME-{str(idx+1).zfill(3)}**")
+                    st.caption(f"Status: **{data['status']}** | ID: **DME-{str(idx+1).zfill(3)}**")
                     
                     items_to_add.append({
                         'item_name': item_name,
                         'category': category,
-                        'status': status,
-                        'condition': condition,
+                        'status': data['status'],
                         'serial': serial,
-                        'manufacturer': manufacturer,
-                        'location': location,
-                        'notes': notes,
-                        'customer_name': '',
-                        'pickup_date': '',
-                        'unit_cost': '',
-                        'reorder_level': ''
+                        'manufacturer': manufacturer
                     })
         
         st.divider()
@@ -496,7 +434,8 @@ def main():
                         if success:
                             st.balloons()
                             st.success(f"🎉 Successfully added {count} device(s) to inventory!")
-                            st.markdown(f"[📊 View Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
+                            st.warning("⚠️ لا تنسى تختار Condition و Location من الـ Dropdown في Google Sheet!")
+                            st.markdown(f"[📊 Open Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
                             st.session_state.all_devices = []
                         else:
                             st.error("Failed to add to sheet. Check error above.")
