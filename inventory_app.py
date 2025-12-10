@@ -1,5 +1,6 @@
 """
-DME Pro Inventory System - WITH FULL DROPDOWN SUPPORT
+DME Pro Inventory System - SAFE VERSION
+لا يغير أي Data Validation في الـ Sheet
 """
 
 import streamlit as st
@@ -12,7 +13,6 @@ from PIL import Image
 import io
 import json
 import os
-from datetime import datetime
 import time
 import zipfile
 
@@ -22,89 +22,46 @@ SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
 GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# Dropdown options - MUST match exactly what's in your Google Sheet
+# هذه القيم لازم تكون مطابقة بالظبط للي في الـ Dropdown في Google Sheet
 STATUS_OPTIONS = ["In Stock", "Out on Rental", "Sold"]
-CONDITION_OPTIONS = ["New", "Available in Stock", "Used", "Refurbished"]
 
-# Item Names for dropdown
 ITEM_NAMES = [
-    "Oxygen Cylinder",
-    "Hospital Bed",
-    "Wheelchair",
-    "Walker",
-    "Rollator",
-    "CPAP Machine",
-    "BiPAP Machine",
-    "Nebulizer",
-    "Patient Lift",
-    "Commode",
-    "Shower Chair",
-    "Transport Chair",
-    "Power Wheelchair",
-    "Scooter",
-    "Cane",
-    "Crutches",
-    "Knee Scooter",
-    "Oxygen Concentrator",
-    "Suction Machine",
-    "Hospital Bed Mattress",
-    "Bed Rails",
-    "Overbed Table",
-    "IV Pole",
-    "Other"
+    "Oxygen Cylinder", "Hospital Bed", "Wheelchair", "Walker", "Rollator",
+    "CPAP Machine", "BiPAP Machine", "Nebulizer", "Patient Lift", "Commode",
+    "Shower Chair", "Transport Chair", "Power Wheelchair", "Scooter", "Cane",
+    "Crutches", "Knee Scooter", "Oxygen Concentrator", "Suction Machine",
+    "Hospital Bed Mattress", "Bed Rails", "Overbed Table", "IV Pole", "Other"
 ]
 
 CATEGORIES = [
-    "Hospital Beds & Accessories", 
-    "Mobility Aids", 
-    "Respiratory Devices", 
-    "Wheelchairs",
-    "Bathing & Daily Living Aids", 
-    "Patient Lifts & Slings", 
-    "Diabetic Supplies",
-    "CPAP & BiPAP Machines", 
-    "Nebulizers", 
-    "Walkers & Rollators", 
-    "Canes & Crutches",
-    "Scooters & Power Wheelchairs", 
-    "Commodes & Shower Chairs", 
-    "Other Medical Equipment"
+    "Hospital Beds & Accessories", "Mobility Aids", "Respiratory Devices",
+    "Wheelchairs", "Bathing & Daily Living Aids", "Patient Lifts & Slings",
+    "Diabetic Supplies", "CPAP & BiPAP Machines", "Nebulizers",
+    "Walkers & Rollators", "Canes & Crutches", "Scooters & Power Wheelchairs",
+    "Commodes & Shower Chairs", "Other Medical Equipment"
 ]
 
 # ================== AI EXTRACTION ==================
 
 def extract_equipment_data(image_bytes):
-    """Extract ALL equipment from image"""
-    
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel('gemini-2.0-flash')
-        
         img = Image.open(io.BytesIO(image_bytes))
         
-        prompt = f"""Analyze this medical equipment image carefully.
+        prompt = f"""Analyze this medical equipment image.
 
-COUNT how many SEPARATE pieces of equipment are visible.
-For EACH individual device, extract its unique information.
-
-For item_name, choose from this list ONLY:
+For item_name, you MUST choose from this EXACT list:
 {', '.join(ITEM_NAMES)}
 
-For category, choose from this list ONLY:
+For category, you MUST choose from this EXACT list:
 {', '.join(CATEGORIES)}
-
-For each device provide:
-1. item_name: Choose from the list above
-2. category: Choose from the list above
-3. serial: The UNIQUE serial/lot number for THIS specific device
-4. manufacturer: Brand name visible on THIS device
 
 Return JSON:
 {{
   "devices": [
-    {{"item_name": "Oxygen Cylinder", "category": "Respiratory Devices", "serial": "W1063072PB01", "manufacturer": "Airgas"}}
-  ],
-  "total_count": 1
+    {{"item_name": "Oxygen Cylinder", "category": "Respiratory Devices", "serial": "ABC123", "manufacturer": "Brand"}}
+  ]
 }}
 
 Return ONLY valid JSON."""
@@ -123,27 +80,16 @@ Return ONLY valid JSON."""
             text = text[start:end]
         
         data = json.loads(text)
-        
-        if 'devices' in data:
-            return data['devices']
-        else:
-            return [data]
+        return data.get('devices', [data])
         
     except Exception as e:
         st.error(f"❌ AI Error: {str(e)}")
-        return [{
-            'item_name': 'Other',
-            'category': 'Other Medical Equipment',
-            'serial': 'Not visible',
-            'manufacturer': 'Not visible'
-        }]
+        return [{'item_name': 'Other', 'category': 'Other Medical Equipment', 'serial': '', 'manufacturer': ''}]
 
 # ================== ZIP EXTRACTION ==================
 
 def extract_images_from_zip(zip_file):
-    """Extract images from ZIP file"""
     images = []
-    
     try:
         zip_bytes = zip_file.read()
         with zipfile.ZipFile(io.BytesIO(zip_bytes), 'r') as z:
@@ -153,22 +99,16 @@ def extract_images_from_zip(zip_file):
                         try:
                             image_bytes = z.read(filename)
                             Image.open(io.BytesIO(image_bytes))
-                            images.append({
-                                'filename': os.path.basename(filename),
-                                'bytes': image_bytes
-                            })
+                            images.append({'filename': os.path.basename(filename), 'bytes': image_bytes})
                         except:
                             pass
     except Exception as e:
         st.error(f"ZIP Error: {str(e)}")
-    
     return images
 
 # ================== GOOGLE SHEETS ==================
 
 def get_sheets_service():
-    """Get Google Sheets service"""
-    
     if 'google_oauth' in st.secrets:
         try:
             creds_info = {
@@ -179,20 +119,15 @@ def get_sheets_service():
                 'client_secret': st.secrets['google_oauth']['client_secret'],
                 'scopes': SCOPES
             }
-            
             creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
-            
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-            
             return build('sheets', 'v4', credentials=creds)
-            
         except Exception as e:
-            st.error(f"Error loading credentials: {e}")
+            st.error(f"Error: {e}")
             st.stop()
     
     creds = None
-    
     if os.path.exists('token.json'):
         creds = Credentials.from_authorized_user_file('token.json', SCOPES)
     
@@ -205,140 +140,28 @@ def get_sheets_service():
                 return None
             flow = InstalledAppFlow.from_client_secrets_file('oauth_credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
-        
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
     
     return build('sheets', 'v4', credentials=creds)
 
 
-def get_sheet_id(service):
-    """Get the sheet ID (gid)"""
-    try:
-        spreadsheet = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
-        return spreadsheet['sheets'][0]['properties']['sheetId']
-    except:
-        return 0
-
-
-def apply_all_dropdowns(service, sheet_id):
-    """Apply dropdown validation to ALL rows (2 to 1000)"""
-    
-    requests = []
-    
-    # Column B (index 1) - Item Name
-    requests.append({
-        "setDataValidation": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 1,      # Row 2 (0-indexed)
-                "endRowIndex": 1000,     # Up to row 1000
-                "startColumnIndex": 1,   # Column B
-                "endColumnIndex": 2
-            },
-            "rule": {
-                "condition": {
-                    "type": "ONE_OF_LIST",
-                    "values": [{"userEnteredValue": name} for name in ITEM_NAMES]
-                },
-                "showCustomUi": True,
-                "strict": False
-            }
-        }
-    })
-    
-    # Column C (index 2) - Category
-    requests.append({
-        "setDataValidation": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 1,
-                "endRowIndex": 1000,
-                "startColumnIndex": 2,   # Column C
-                "endColumnIndex": 3
-            },
-            "rule": {
-                "condition": {
-                    "type": "ONE_OF_LIST",
-                    "values": [{"userEnteredValue": cat} for cat in CATEGORIES]
-                },
-                "showCustomUi": True,
-                "strict": False
-            }
-        }
-    })
-    
-    # Column D (index 3) - Status
-    requests.append({
-        "setDataValidation": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 1,
-                "endRowIndex": 1000,
-                "startColumnIndex": 3,   # Column D
-                "endColumnIndex": 4
-            },
-            "rule": {
-                "condition": {
-                    "type": "ONE_OF_LIST",
-                    "values": [{"userEnteredValue": status} for status in STATUS_OPTIONS]
-                },
-                "showCustomUi": True,
-                "strict": False
-            }
-        }
-    })
-    
-    # Column G (index 6) - Condition
-    requests.append({
-        "setDataValidation": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 1,
-                "endRowIndex": 1000,
-                "startColumnIndex": 6,   # Column G
-                "endColumnIndex": 7
-            },
-            "rule": {
-                "condition": {
-                    "type": "ONE_OF_LIST",
-                    "values": [{"userEnteredValue": cond} for cond in CONDITION_OPTIONS]
-                },
-                "showCustomUi": True,
-                "strict": False
-            }
-        }
-    })
-    
-    try:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=SHEET_ID,
-            body={"requests": requests}
-        ).execute()
-        return True
-    except Exception as e:
-        st.warning(f"⚠️ Dropdown error: {str(e)}")
-        return False
-
-
 def append_to_sheet(service, items):
-    """Add items to Google Sheet"""
+    """
+    ✅ SAFE: يكتب البيانات بس - لا يلمس الـ Data Validation
+    """
     try:
         sheet = service.spreadsheets()
         
-        # Get current row count
-        result = sheet.values().get(
-            spreadsheetId=SHEET_ID,
-            range='A:A'
-        ).execute()
-        
+        # جيب عدد الـ rows الموجودة
+        result = sheet.values().get(spreadsheetId=SHEET_ID, range='A:A').execute()
         existing_rows = len(result.get('values', []))
         
-        # Prepare rows
         rows = []
         for idx, item in enumerate(items):
             item_id = f"DME-{str(existing_rows + idx).zfill(3)}"
             
+            # ترتيب الأعمدة حسب الـ Sheet بتاعك
             row = [
                 item_id,                              # A: Item ID/SKU
                 item.get('item_name', ''),            # B: Item Name
@@ -346,7 +169,7 @@ def append_to_sheet(service, items):
                 item.get('status', ''),               # D: Status
                 '',                                   # E: Customer/Hospice Name
                 '',                                   # F: Pickup Date
-                '',                                   # G: Condition (dropdown)
+                '',                                   # G: Condition (سيبها فاضية - هتختار من الـ dropdown)
                 '',                                   # H: Location
                 '',                                   # I: (empty)
                 item.get('serial', ''),               # J: Serial/Lot Number
@@ -358,7 +181,7 @@ def append_to_sheet(service, items):
             ]
             rows.append(row)
         
-        # Append data
+        # ✅ فقط append - لا setDataValidation - لا batchUpdate
         sheet.values().append(
             spreadsheetId=SHEET_ID,
             range='A:O',
@@ -367,14 +190,10 @@ def append_to_sheet(service, items):
             body={'values': rows}
         ).execute()
         
-        # Apply dropdown to ALL rows (including existing)
-        sheet_gid = get_sheet_id(service)
-        apply_all_dropdowns(service, sheet_gid)
-        
         return True, len(rows)
         
     except Exception as e:
-        st.error(f"❌ Sheet Error: {str(e)}")
+        st.error(f"❌ Error: {str(e)}")
         return False, 0
 
 
@@ -383,97 +202,44 @@ def append_to_sheet(service, items):
 def main():
     st.set_page_config(page_title="DME Inventory", page_icon="📦", layout="wide")
     
-    # Header
     st.markdown("""
     <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-        <h1 style="color: white; text-align: center; margin: 0;">📦 DME Pro Inventory System</h1>
-        <p style="color: white; text-align: center; margin: 5px 0 0 0;">Detects multiple devices per image!</p>
+        <h1 style="color: white; text-align: center; margin: 0;">📦 DME Pro Inventory</h1>
     </div>
     """, unsafe_allow_html=True)
     
-    # Sidebar
     with st.sidebar:
-        st.header("📊 Sheet Info")
-        st.markdown(f"[📄 Open Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
-        
-        st.header("📋 Status Options")
-        for status in STATUS_OPTIONS:
-            st.write(f"• {status}")
-        
-        st.header("🔍 Features")
-        st.write("✅ Detects multiple devices")
-        st.write("✅ Auto Dropdowns")
-        st.write("✅ Auto Item ID")
-        st.write("✅ ZIP file support")
-        
-        st.divider()
-        
-        # Manual fix button
-        st.header("🔧 Fix Dropdowns")
-        if st.button("🔄 Apply Dropdowns to All Rows"):
-            service = get_sheets_service()
-            if service:
-                sheet_gid = get_sheet_id(service)
-                if apply_all_dropdowns(service, sheet_gid):
-                    st.success("✅ Dropdowns applied!")
-                else:
-                    st.error("❌ Failed")
+        st.header("📊 Sheet")
+        st.markdown(f"[📄 Open Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
+        st.info("✅ Safe Mode: لا يغير الـ Dropdowns")
     
-    # Initialize session state
     if 'all_devices' not in st.session_state:
         st.session_state.all_devices = []
     
-    # Step 1: Status
+    # Step 1
     st.subheader("Step 1: Select Status")
-    selected_status = st.selectbox("Equipment Status:", STATUS_OPTIONS)
+    selected_status = st.selectbox("Status:", STATUS_OPTIONS)
     
-    # Step 2: Upload
-    st.subheader("Step 2: Upload Photos or ZIP")
-    uploaded_files = st.file_uploader(
-        "Choose photos or ZIP file",
-        type=['jpg', 'jpeg', 'png', 'zip'],
-        accept_multiple_files=True
-    )
+    # Step 2
+    st.subheader("Step 2: Upload Photos")
+    uploaded_files = st.file_uploader("Choose photos or ZIP", type=['jpg', 'jpeg', 'png', 'zip'], accept_multiple_files=True)
     
     if uploaded_files:
         all_images = []
-        
         for file in uploaded_files:
             if file.name.lower().endswith('.zip'):
-                st.info(f"📦 Extracting from {file.name}...")
-                zip_images = extract_images_from_zip(file)
-                st.success(f"Found {len(zip_images)} images in ZIP")
-                all_images.extend(zip_images)
+                all_images.extend(extract_images_from_zip(file))
             else:
-                all_images.append({
-                    'filename': file.name,
-                    'bytes': file.getvalue()
-                })
+                all_images.append({'filename': file.name, 'bytes': file.getvalue()})
         
         st.success(f"✅ {len(all_images)} image(s) ready")
         
-        # Show thumbnails
-        if all_images:
-            cols = st.columns(min(len(all_images), 6))
-            for idx, img in enumerate(all_images[:6]):
-                with cols[idx]:
-                    st.image(img['bytes'], width=80)
-            if len(all_images) > 6:
-                st.caption(f"... and {len(all_images) - 6} more")
-        
-        # Extract button
-        if st.button("🔍 Extract ALL Equipment", type="primary", use_container_width=True):
+        if st.button("🔍 Extract Equipment", type="primary", use_container_width=True):
             st.session_state.all_devices = []
-            
             progress = st.progress(0)
-            status_text = st.empty()
-            total_devices = 0
             
             for idx, img_data in enumerate(all_images):
-                status_text.text(f"Processing {img_data['filename']}... ({idx+1}/{len(all_images)})")
-                
                 devices = extract_equipment_data(img_data['bytes'])
-                
                 for device in devices:
                     st.session_state.all_devices.append({
                         'filename': img_data['filename'],
@@ -481,78 +247,49 @@ def main():
                         'extracted': device,
                         'status': selected_status
                     })
-                    total_devices += 1
-                
                 progress.progress((idx + 1) / len(all_images))
-                time.sleep(0.3)
             
-            status_text.text(f"✅ Found {total_devices} total devices!")
             st.rerun()
     
-    # Step 3: Review & Add
+    # Step 3
     if st.session_state.all_devices:
         st.subheader(f"Step 3: Review {len(st.session_state.all_devices)} Device(s)")
         
         items_to_add = []
         
         for idx, data in enumerate(st.session_state.all_devices):
-            serial_display = data['extracted'].get('serial', 'N/A')[:20]
-            
-            with st.expander(f"📸 #{idx+1}: {data['extracted'].get('item_name', 'Unknown')} | Serial: {serial_display}", expanded=True):
+            with st.expander(f"#{idx+1}: {data['extracted'].get('item_name', 'Unknown')}", expanded=True):
                 col1, col2 = st.columns([1, 3])
                 
                 with col1:
-                    st.image(data['image_bytes'], width=120)
-                    st.caption(f"From: {data['filename']}")
+                    st.image(data['image_bytes'], width=100)
                 
                 with col2:
                     c1, c2 = st.columns(2)
                     
                     with c1:
-                        # Item Name - DROPDOWN
+                        # Item Name - اختيار من القائمة
                         item_value = data['extracted'].get('item_name', 'Other')
-                        item_idx = len(ITEM_NAMES) - 1  # Default to "Other"
+                        item_idx = len(ITEM_NAMES) - 1
                         for i, name in enumerate(ITEM_NAMES):
-                            if name.lower() in item_value.lower() or item_value.lower() in name.lower():
+                            if name.lower() == item_value.lower():
                                 item_idx = i
                                 break
                         
-                        item_name = st.selectbox(
-                            "Item Name:", 
-                            ITEM_NAMES, 
-                            index=item_idx,
-                            key=f"name_{idx}"
-                        )
-                        
-                        serial = st.text_input(
-                            "Serial/Lot Number:", 
-                            value=data['extracted'].get('serial', ''), 
-                            key=f"serial_{idx}"
-                        )
+                        item_name = st.selectbox("Item Name:", ITEM_NAMES, index=item_idx, key=f"name_{idx}")
+                        serial = st.text_input("Serial:", value=data['extracted'].get('serial', ''), key=f"serial_{idx}")
                     
                     with c2:
-                        # Category - DROPDOWN
+                        # Category - اختيار من القائمة
                         cat_value = data['extracted'].get('category', 'Other Medical Equipment')
                         cat_idx = len(CATEGORIES) - 1
                         for i, cat in enumerate(CATEGORIES):
-                            if cat.lower() in cat_value.lower() or cat_value.lower() in cat.lower():
+                            if cat.lower() == cat_value.lower():
                                 cat_idx = i
                                 break
                         
-                        category = st.selectbox(
-                            "Category:", 
-                            CATEGORIES, 
-                            index=cat_idx, 
-                            key=f"cat_{idx}"
-                        )
-                        
-                        manufacturer = st.text_input(
-                            "Manufacturer/Supplier:", 
-                            value=data['extracted'].get('manufacturer', ''), 
-                            key=f"mfr_{idx}"
-                        )
-                    
-                    st.caption(f"Status: **{data['status']}** | ID: **DME-{str(idx+1).zfill(3)}**")
+                        category = st.selectbox("Category:", CATEGORIES, index=cat_idx, key=f"cat_{idx}")
+                        manufacturer = st.text_input("Manufacturer:", value=data['extracted'].get('manufacturer', ''), key=f"mfr_{idx}")
                     
                     items_to_add.append({
                         'item_name': item_name,
@@ -562,40 +299,22 @@ def main():
                         'manufacturer': manufacturer
                     })
         
-        st.divider()
-        
-        # Summary
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            st.metric("Total Devices", len(items_to_add))
-        with col2:
-            st.metric("Status", selected_status)
-        with col3:
-            st.metric("ID Range", f"DME-001 → DME-{len(items_to_add):03d}")
-        
-        # Buttons
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("🗑️ Clear All", use_container_width=True):
+            if st.button("🗑️ Clear", use_container_width=True):
                 st.session_state.all_devices = []
                 st.rerun()
         
-        with col_btn2:
-            if st.button(f"✅ Add {len(items_to_add)} Device(s) to Google Sheets", type="primary", use_container_width=True):
-                with st.spinner("Adding to inventory..."):
-                    service = get_sheets_service()
-                    if service:
-                        success, count = append_to_sheet(service, items_to_add)
-                        if success:
-                            st.balloons()
-                            st.success(f"🎉 Added {count} device(s) with dropdowns!")
-                            st.markdown(f"[📊 Open Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
-                            st.session_state.all_devices = []
-                        else:
-                            st.error("Failed to add.")
-                    else:
-                        st.error("Could not connect to Google Sheets.")
+        with col2:
+            if st.button(f"✅ Add {len(items_to_add)} Device(s)", type="primary", use_container_width=True):
+                service = get_sheets_service()
+                if service:
+                    success, count = append_to_sheet(service, items_to_add)
+                    if success:
+                        st.balloons()
+                        st.success(f"🎉 Added {count} device(s)!")
+                        st.info("💡 Condition: اختارها من الـ Dropdown في Google Sheet")
+                        st.session_state.all_devices = []
 
 
 if __name__ == "__main__":
