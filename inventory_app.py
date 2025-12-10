@@ -128,7 +128,34 @@ def extract_images_from_zip(zip_file):
 # ================== GOOGLE SHEETS ==================
 
 def get_sheets_service():
-    """Get Google Sheets service"""
+    """Get Google Sheets service using token from secrets"""
+    
+    # Check if we have token in Streamlit secrets (CLOUD)
+    if 'google_oauth' in st.secrets:
+        try:
+            # Build credentials from secrets
+            creds_info = {
+                'token': st.secrets['google_oauth']['token'],
+                'refresh_token': st.secrets['google_oauth']['refresh_token'],
+                'token_uri': st.secrets['google_oauth']['token_uri'],
+                'client_id': st.secrets['google_oauth']['client_id'],
+                'client_secret': st.secrets['google_oauth']['client_secret'],
+                'scopes': SCOPES
+            }
+            
+            creds = Credentials.from_authorized_user_info(creds_info, SCOPES)
+            
+            # Refresh if expired
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            
+            return build('sheets', 'v4', credentials=creds)
+            
+        except Exception as e:
+            st.error(f"Error loading credentials from secrets: {e}")
+            st.stop()
+    
+    # Fallback to local OAuth (for local development)
     creds = None
     
     if os.path.exists('token.json'):
@@ -148,95 +175,6 @@ def get_sheets_service():
             token.write(creds.to_json())
     
     return build('sheets', 'v4', credentials=creds)
-
-def get_next_item_id(service):
-    """Get next Item ID number"""
-    try:
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range="A:A"
-        ).execute()
-        
-        values = result.get('values', [])
-        max_num = 0
-        for row in values:
-            if row and len(row) > 0:
-                val = row[0]
-                if val.startswith('DME-'):
-                    try:
-                        num = int(val.replace('DME-', ''))
-                        if num > max_num:
-                            max_num = num
-                    except:
-                        pass
-        return max_num + 1
-    except:
-        return 1
-
-def get_next_row(service):
-    """Find next empty row"""
-    try:
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range="B:B"
-        ).execute()
-        
-        values = result.get('values', [])
-        for i, row in enumerate(values):
-            if i == 0:
-                continue
-            if not row or (len(row) > 0 and row[0] == ''):
-                return i + 1
-        return len(values) + 1
-    except:
-        return 2
-
-def append_to_sheet(service, data_rows):
-    """Add rows to Google Sheet"""
-    try:
-        next_id = get_next_item_id(service)
-        next_row = get_next_row(service)
-        
-        values = []
-        for idx, row in enumerate(data_rows):
-            item_id = f"DME-{str(next_id + idx).zfill(3)}"
-            
-            values.append([
-                item_id,                               # A: Item ID
-                row.get('item_name', ''),              # B: Item Name
-                row.get('category', ''),               # C: Category
-                row.get('status', ''),                 # D: Status
-                '',                                    # E: Customer
-                '',                                    # F: Pickup Date
-                row.get('condition', ''),              # G: Condition
-                'Yes' if row.get('status') == 'In Stock' else 'No',  # H: Available
-                row.get('location', ''),               # I: Location
-                row.get('serial', ''),                 # J: Serial
-                '',                                    # K: Purchase Date
-                '',                                    # L: Warranty
-                '',                                    # M: Maintenance
-                '',                                    # N: Condition/Status
-                row.get('manufacturer', ''),           # O: Supplier
-                '',                                    # P: Unit Cost
-                '',                                    # Q: Total Value
-                '',                                    # R: Reorder Level
-                row.get('notes', '')                   # S: Notes
-            ])
-        
-        body = {'values': values}
-        end_row = next_row + len(values) - 1
-        
-        service.spreadsheets().values().update(
-            spreadsheetId=SHEET_ID,
-            range=f"A{next_row}:S{end_row}",
-            valueInputOption='USER_ENTERED',
-            body=body
-        ).execute()
-        
-        return True, len(values)
-    except Exception as e:
-        st.error(f"Sheet Error: {str(e)}")
-        return False, 0
 
 # ================== MAIN APP ==================
 
