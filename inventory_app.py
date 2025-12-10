@@ -128,115 +128,74 @@ def extract_images_from_zip(zip_file):
 # ================== GOOGLE SHEETS ==================
 
 def get_sheets_service():
-    """Get Google Sheets service"""
+    """Get Google Sheets service - works locally AND in cloud"""
     creds = None
     
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    # Try to get OAuth credentials from Streamlit secrets (CLOUD)
+    if 'oauth_credentials' in st.secrets:
+        try:
+            # Write secrets to temporary file for OAuth flow
+            oauth_dict = dict(st.secrets['oauth_credentials'])
+            with open('oauth_credentials.json', 'w') as f:
+                json.dump(oauth_dict, f)
+        except Exception as e:
+            st.error(f"Error loading OAuth from secrets: {e}")
     
+    # Check for existing token (local or cloud)
+    if os.path.exists('token.json'):
+        try:
+            creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+        except Exception:
+            if os.path.exists('token.json'):
+                os.remove('token.json')
+    
+    # If no valid credentials, authenticate
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not os.path.exists('oauth_credentials.json'):
-                st.error("❌ Missing oauth_credentials.json file!")
-                return None
-            flow = InstalledAppFlow.from_client_secrets_file('oauth_credentials.json', SCOPES)
-            creds = flow.run_local_server(port=0)
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
         
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
+        if not creds:
+            if not os.path.exists('oauth_credentials.json'):
+                st.error("""
+                ❌ **Missing OAuth Credentials!**
+                
+                Please configure OAuth credentials in Streamlit secrets.
+                
+                Go to: App settings → Secrets
+                Add: [oauth_credentials.installed] section
+                """)
+                st.stop()
+            
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'oauth_credentials.json', 
+                    SCOPES
+                )
+                # Use run_local_server for cloud (will show auth URL)
+                creds = flow.run_local_server(port=8080, open_browser=False)
+            except Exception as e:
+                st.error(f"""
+                ❌ **Authentication Error!**
+                
+                {str(e)}
+                
+                In Streamlit Cloud, OAuth authentication requires special setup.
+                Please follow the authentication URL that appears.
+                """)
+                st.stop()
+        
+        # Save credentials
+        if creds:
+            try:
+                with open('token.json', 'w') as token:
+                    token.write(creds.to_json())
+            except Exception:
+                pass  # Can't save in some cloud environments
     
     return build('sheets', 'v4', credentials=creds)
-
-def get_next_item_id(service):
-    """Get next Item ID number"""
-    try:
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range="A:A"
-        ).execute()
-        
-        values = result.get('values', [])
-        max_num = 0
-        for row in values:
-            if row and len(row) > 0:
-                val = row[0]
-                if val.startswith('DME-'):
-                    try:
-                        num = int(val.replace('DME-', ''))
-                        if num > max_num:
-                            max_num = num
-                    except:
-                        pass
-        return max_num + 1
-    except:
-        return 1
-
-def get_next_row(service):
-    """Find next empty row"""
-    try:
-        result = service.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID,
-            range="B:B"
-        ).execute()
-        
-        values = result.get('values', [])
-        for i, row in enumerate(values):
-            if i == 0:
-                continue
-            if not row or (len(row) > 0 and row[0] == ''):
-                return i + 1
-        return len(values) + 1
-    except:
-        return 2
-
-def append_to_sheet(service, data_rows):
-    """Add rows to Google Sheet"""
-    try:
-        next_id = get_next_item_id(service)
-        next_row = get_next_row(service)
-        
-        values = []
-        for idx, row in enumerate(data_rows):
-            item_id = f"DME-{str(next_id + idx).zfill(3)}"
-            
-            values.append([
-                item_id,                               # A: Item ID
-                row.get('item_name', ''),              # B: Item Name
-                row.get('category', ''),               # C: Category
-                row.get('status', ''),                 # D: Status
-                '',                                    # E: Customer
-                '',                                    # F: Pickup Date
-                row.get('condition', ''),              # G: Condition
-                'Yes' if row.get('status') == 'In Stock' else 'No',  # H: Available
-                row.get('location', ''),               # I: Location
-                row.get('serial', ''),                 # J: Serial
-                '',                                    # K: Purchase Date
-                '',                                    # L: Warranty
-                '',                                    # M: Maintenance
-                '',                                    # N: Condition/Status
-                row.get('manufacturer', ''),           # O: Supplier
-                '',                                    # P: Unit Cost
-                '',                                    # Q: Total Value
-                '',                                    # R: Reorder Level
-                row.get('notes', '')                   # S: Notes
-            ])
-        
-        body = {'values': values}
-        end_row = next_row + len(values) - 1
-        
-        service.spreadsheets().values().update(
-            spreadsheetId=SHEET_ID,
-            range=f"A{next_row}:S{end_row}",
-            valueInputOption='USER_ENTERED',
-            body=body
-        ).execute()
-        
-        return True, len(values)
-    except Exception as e:
-        st.error(f"Sheet Error: {str(e)}")
-        return False, 0
 
 # ================== MAIN APP ==================
 
