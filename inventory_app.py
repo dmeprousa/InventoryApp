@@ -1,6 +1,5 @@
 """
-DME Pro Inventory System - SAFE VERSION
-لا يغير أي Data Validation في الـ Sheet
+DME Pro Inventory System - EXACT DROPDOWN VALUES
 """
 
 import streamlit as st
@@ -22,23 +21,75 @@ SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
 GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
-# هذه القيم لازم تكون مطابقة بالظبط للي في الـ Dropdown في Google Sheet
-STATUS_OPTIONS = ["In Stock", "Out on Rental", "Sold"]
+# ============ EXACT VALUES FROM GOOGLE SHEET DROPDOWNS ============
 
-ITEM_NAMES = [
-    "Oxygen Cylinder", "Hospital Bed", "Wheelchair", "Walker", "Rollator",
-    "CPAP Machine", "BiPAP Machine", "Nebulizer", "Patient Lift", "Commode",
-    "Shower Chair", "Transport Chair", "Power Wheelchair", "Scooter", "Cane",
-    "Crutches", "Knee Scooter", "Oxygen Concentrator", "Suction Machine",
-    "Hospital Bed Mattress", "Bed Rails", "Overbed Table", "IV Pole", "Other"
+# Column D - Status
+STATUS_OPTIONS = [
+    "In Stock",
+    "Out on Rental",
+    "Sold"
 ]
 
+# Column B - Item Name (بالظبط من الـ Sheet)
+ITEM_NAMES = [
+    "Canes",
+    "Commode chairs",
+    "Continuous passive motion machines",
+    "CPAP machines",
+    "Crutches",
+    "Diabetes supplies",
+    "Hospital beds",
+    "Infusion pumps",
+    "Nebulizers",
+    "Oxygen equipment",
+    "Patient lifts",
+    "Pressure-reducing support surfaces",
+    "Suction pumps",
+    "Traction equipment",
+    "Walkers",
+    "Wheelchairs",
+    "Mobility Scooters",
+    "Shower Chairs",
+    "Raised Toilet Seats",
+    "Grab Bars",
+    "Bedside Commodes",
+    "Overbed Tables",
+    "Blood Pressure Monitors",
+    "Glucose Meters",
+    "Pulse Oximeters",
+    "Reachers and Grabbers",
+    "Dressing Aids",
+    "Eating and Drinking Aids",
+    "Alternating Pressure Pads",
+    "Mattresses",
+    "Lambs Wool Pads"
+]
+
+# Column C - Category (بالظبط من الـ Sheet)
 CATEGORIES = [
-    "Hospital Beds & Accessories", "Mobility Aids", "Respiratory Devices",
-    "Wheelchairs", "Bathing & Daily Living Aids", "Patient Lifts & Slings",
-    "Diabetic Supplies", "CPAP & BiPAP Machines", "Nebulizers",
-    "Walkers & Rollators", "Canes & Crutches", "Scooters & Power Wheelchairs",
-    "Commodes & Shower Chairs", "Other Medical Equipment"
+    "Mobility Aids",
+    "Respiratory Devices",
+    "Wheelchairs",
+    "Bathing & Daily Living Aids",
+    "Incontinence Products",
+    "Hospital Beds & Accessories",
+    "Patient Lifts & Slings",
+    "Orthopedic Supports & Braces",
+    "Diabetic Supplies",
+    "Ostomy Supplies",
+    "Wound Care Supplies",
+    "Enteral Feeding Supplies",
+    "Urological Supplies",
+    "Pain Management",
+    "CPAP & BiPAP Machines",
+    "Nebulizers",
+    "Walkers & Rollators",
+    "Canes & Crutches",
+    "Scooters & Power Wheelchairs",
+    "Commodes & Shower Chairs",
+    "Grab Bars",
+    "Durable Medical Equipment (DME)",
+    "Mobility"
 ]
 
 # ================== AI EXTRACTION ==================
@@ -51,16 +102,42 @@ def extract_equipment_data(image_bytes):
         
         prompt = f"""Analyze this medical equipment image.
 
-For item_name, you MUST choose from this EXACT list:
-{', '.join(ITEM_NAMES)}
+You MUST choose item_name from this EXACT list (use exact spelling and capitalization):
+{json.dumps(ITEM_NAMES, indent=2)}
 
-For category, you MUST choose from this EXACT list:
-{', '.join(CATEGORIES)}
+You MUST choose category from this EXACT list (use exact spelling and capitalization):
+{json.dumps(CATEGORIES, indent=2)}
 
-Return JSON:
+Mapping examples:
+- Oxygen tank/cylinder → "Oxygen equipment"
+- Walking cane → "Canes"
+- Hospital bed → "Hospital beds"
+- Wheelchair → "Wheelchairs"
+- CPAP/BiPAP → "CPAP machines"
+- Nebulizer → "Nebulizers"
+- Walker/Rollator → "Walkers"
+- Commode → "Commode chairs" or "Bedside Commodes"
+- Shower chair → "Shower Chairs"
+- Crutches → "Crutches"
+- Patient lift → "Patient lifts"
+- Scooter → "Mobility Scooters"
+- Blood pressure monitor → "Blood Pressure Monitors"
+- Glucose meter → "Glucose Meters"
+- Mattress → "Mattresses"
+- Overbed table → "Overbed Tables"
+- Grab bar → "Grab Bars"
+- Infusion/IV pump → "Infusion pumps"
+- Suction machine → "Suction pumps"
+
+Return JSON with EXACT values from lists:
 {{
   "devices": [
-    {{"item_name": "Oxygen Cylinder", "category": "Respiratory Devices", "serial": "ABC123", "manufacturer": "Brand"}}
+    {{
+      "item_name": "Oxygen equipment",
+      "category": "Respiratory Devices",
+      "serial": "ABC123",
+      "manufacturer": "Brand"
+    }}
   ]
 }}
 
@@ -80,11 +157,20 @@ Return ONLY valid JSON."""
             text = text[start:end]
         
         data = json.loads(text)
-        return data.get('devices', [data])
+        devices = data.get('devices', [data])
+        
+        # Validate - make sure values exist in lists
+        for device in devices:
+            if device.get('item_name') not in ITEM_NAMES:
+                device['item_name'] = ITEM_NAMES[9]  # Default: Oxygen equipment
+            if device.get('category') not in CATEGORIES:
+                device['category'] = CATEGORIES[1]  # Default: Respiratory Devices
+        
+        return devices
         
     except Exception as e:
         st.error(f"❌ AI Error: {str(e)}")
-        return [{'item_name': 'Other', 'category': 'Other Medical Equipment', 'serial': '', 'manufacturer': ''}]
+        return [{'item_name': ITEM_NAMES[9], 'category': CATEGORIES[1], 'serial': '', 'manufacturer': ''}]
 
 # ================== ZIP EXTRACTION ==================
 
@@ -147,13 +233,10 @@ def get_sheets_service():
 
 
 def append_to_sheet(service, items):
-    """
-    ✅ SAFE: يكتب البيانات بس - لا يلمس الـ Data Validation
-    """
+    """يكتب البيانات فقط"""
     try:
         sheet = service.spreadsheets()
         
-        # جيب عدد الـ rows الموجودة
         result = sheet.values().get(spreadsheetId=SHEET_ID, range='A:A').execute()
         existing_rows = len(result.get('values', []))
         
@@ -161,7 +244,6 @@ def append_to_sheet(service, items):
         for idx, item in enumerate(items):
             item_id = f"DME-{str(existing_rows + idx).zfill(3)}"
             
-            # ترتيب الأعمدة حسب الـ Sheet بتاعك
             row = [
                 item_id,                              # A: Item ID/SKU
                 item.get('item_name', ''),            # B: Item Name
@@ -169,7 +251,7 @@ def append_to_sheet(service, items):
                 item.get('status', ''),               # D: Status
                 '',                                   # E: Customer/Hospice Name
                 '',                                   # F: Pickup Date
-                '',                                   # G: Condition (سيبها فاضية - هتختار من الـ dropdown)
+                '',                                   # G: Condition
                 '',                                   # H: Location
                 '',                                   # I: (empty)
                 item.get('serial', ''),               # J: Serial/Lot Number
@@ -181,7 +263,6 @@ def append_to_sheet(service, items):
             ]
             rows.append(row)
         
-        # ✅ فقط append - لا setDataValidation - لا batchUpdate
         sheet.values().append(
             spreadsheetId=SHEET_ID,
             range='A:O',
@@ -211,7 +292,7 @@ def main():
     with st.sidebar:
         st.header("📊 Sheet")
         st.markdown(f"[📄 Open Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
-        st.info("✅ Safe Mode: لا يغير الـ Dropdowns")
+        st.success("✅ Dropdown values matched!")
     
     if 'all_devices' not in st.session_state:
         st.session_state.all_devices = []
@@ -268,25 +349,15 @@ def main():
                     c1, c2 = st.columns(2)
                     
                     with c1:
-                        # Item Name - اختيار من القائمة
-                        item_value = data['extracted'].get('item_name', 'Other')
-                        item_idx = len(ITEM_NAMES) - 1
-                        for i, name in enumerate(ITEM_NAMES):
-                            if name.lower() == item_value.lower():
-                                item_idx = i
-                                break
+                        item_value = data['extracted'].get('item_name', ITEM_NAMES[0])
+                        item_idx = ITEM_NAMES.index(item_value) if item_value in ITEM_NAMES else 0
                         
                         item_name = st.selectbox("Item Name:", ITEM_NAMES, index=item_idx, key=f"name_{idx}")
                         serial = st.text_input("Serial:", value=data['extracted'].get('serial', ''), key=f"serial_{idx}")
                     
                     with c2:
-                        # Category - اختيار من القائمة
-                        cat_value = data['extracted'].get('category', 'Other Medical Equipment')
-                        cat_idx = len(CATEGORIES) - 1
-                        for i, cat in enumerate(CATEGORIES):
-                            if cat.lower() == cat_value.lower():
-                                cat_idx = i
-                                break
+                        cat_value = data['extracted'].get('category', CATEGORIES[0])
+                        cat_idx = CATEGORIES.index(cat_value) if cat_value in CATEGORIES else 0
                         
                         category = st.selectbox("Category:", CATEGORIES, index=cat_idx, key=f"cat_{idx}")
                         manufacturer = st.text_input("Manufacturer:", value=data['extracted'].get('manufacturer', ''), key=f"mfr_{idx}")
@@ -313,7 +384,6 @@ def main():
                     if success:
                         st.balloons()
                         st.success(f"🎉 Added {count} device(s)!")
-                        st.info("💡 Condition: اختارها من الـ Dropdown في Google Sheet")
                         st.session_state.all_devices = []
 
 
