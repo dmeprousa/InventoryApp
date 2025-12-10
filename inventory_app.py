@@ -17,10 +17,11 @@ import zipfile
 
 # ================== CONFIGURATION ==================
 
-SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
-GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
+# Get secrets from Streamlit Cloud
+SHEET_ID = st.secrets["SHEET_ID"]
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 # ============ EXACT VALUES FROM GOOGLE SHEET DROPDOWNS ============
 
 # Column D - Status
