@@ -22,12 +22,24 @@ SHEET_ID = "1Gn84gSFj0Jgq-RipyVf0KHdMqWRA87lVw7868fG1v-U"
 GEMINI_API_KEY = 'AIzaSyDKTBQz-hOuC4RgutCvNBCpkVFcqdzQoC4'
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
+# Dropdown options - MUST match exactly what's in your Google Sheet
 STATUS_OPTIONS = ["In Stock", "Out on Rental", "Sold"]
+CONDITION_OPTIONS = ["New", "Available in Stock", "Used", "Refurbished"]
 CATEGORIES = [
-    "Hospital Beds & Accessories", "Mobility Aids", "Respiratory Devices", "Wheelchairs",
-    "Bathing & Daily Living Aids", "Patient Lifts & Slings", "Diabetic Supplies",
-    "CPAP & BiPAP Machines", "Nebulizers", "Walkers & Rollators", "Canes & Crutches",
-    "Scooters & Power Wheelchairs", "Commodes & Shower Chairs", "Other Medical Equipment"
+    "Hospital Beds & Accessories", 
+    "Mobility Aids", 
+    "Respiratory Devices", 
+    "Wheelchairs",
+    "Bathing & Daily Living Aids", 
+    "Patient Lifts & Slings", 
+    "Diabetic Supplies",
+    "CPAP & BiPAP Machines", 
+    "Nebulizers", 
+    "Walkers & Rollators", 
+    "Canes & Crutches",
+    "Scooters & Power Wheelchairs", 
+    "Commodes & Shower Chairs", 
+    "Other Medical Equipment"
 ]
 
 # ================== AI EXTRACTION - MULTIPLE DEVICES ==================
@@ -70,7 +82,6 @@ Return ONLY valid JSON."""
         response = model.generate_content([prompt, img])
         text = response.text.strip()
         
-        # Clean JSON
         if '```json' in text:
             text = text.split('```json')[1].split('```')[0].strip()
         elif '```' in text:
@@ -172,36 +183,109 @@ def get_sheets_service():
     return build('sheets', 'v4', credentials=creds)
 
 
-def append_to_sheet(service, items):
-    """Add items to Google Sheet - matching column structure
+def get_sheet_id(service):
+    """Get the sheet ID (gid) for the first sheet"""
+    try:
+        spreadsheet = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+        return spreadsheet['sheets'][0]['properties']['sheetId']
+    except:
+        return 0
+
+
+def apply_data_validation(service, sheet_id, start_row, num_rows):
+    """Apply dropdown validation to new rows"""
     
-    Columns:
-    A: Item ID/SKU
-    B: Item Name
-    C: Category
-    D: Status
-    E: Customer/Hospice Name
-    F: Pickup Date
-    G: Condition (EMPTY - use dropdown in Sheet)
-    H: Location (EMPTY - use dropdown in Sheet)
-    I: (empty)
-    J: Serial/Lot Number
-    K: Purchase Date
-    L: Warranty Expiration
-    M: Maintenance Due
-    N: Condition/Status
-    O: Supplier Information (Manufacturer)
-    """
+    requests = []
+    
+    # Column C (index 2) - Category
+    requests.append({
+        "setDataValidation": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": start_row + num_rows,
+                "startColumnIndex": 2,  # Column C
+                "endColumnIndex": 3
+            },
+            "rule": {
+                "condition": {
+                    "type": "ONE_OF_LIST",
+                    "values": [{"userEnteredValue": cat} for cat in CATEGORIES]
+                },
+                "showCustomUi": True,
+                "strict": False
+            }
+        }
+    })
+    
+    # Column D (index 3) - Status
+    requests.append({
+        "setDataValidation": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": start_row + num_rows,
+                "startColumnIndex": 3,  # Column D
+                "endColumnIndex": 4
+            },
+            "rule": {
+                "condition": {
+                    "type": "ONE_OF_LIST",
+                    "values": [{"userEnteredValue": status} for status in STATUS_OPTIONS]
+                },
+                "showCustomUi": True,
+                "strict": False
+            }
+        }
+    })
+    
+    # Column G (index 6) - Condition
+    requests.append({
+        "setDataValidation": {
+            "range": {
+                "sheetId": sheet_id,
+                "startRowIndex": start_row,
+                "endRowIndex": start_row + num_rows,
+                "startColumnIndex": 6,  # Column G
+                "endColumnIndex": 7
+            },
+            "rule": {
+                "condition": {
+                    "type": "ONE_OF_LIST",
+                    "values": [{"userEnteredValue": cond} for cond in CONDITION_OPTIONS]
+                },
+                "showCustomUi": True,
+                "strict": False
+            }
+        }
+    })
+    
+    try:
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=SHEET_ID,
+            body={"requests": requests}
+        ).execute()
+        return True
+    except Exception as e:
+        st.warning(f"⚠️ Could not apply dropdowns: {str(e)}")
+        return False
+
+
+def append_to_sheet(service, items):
+    """Add items to Google Sheet with dropdowns"""
     try:
         sheet = service.spreadsheets()
         
+        # Get current row count
         result = sheet.values().get(
             spreadsheetId=SHEET_ID,
             range='A:A'
         ).execute()
         
         existing_rows = len(result.get('values', []))
+        start_row = existing_rows  # 0-indexed for API
         
+        # Prepare rows
         rows = []
         for idx, item in enumerate(items):
             item_id = f"DME-{str(existing_rows + idx).zfill(3)}"
@@ -211,10 +295,10 @@ def append_to_sheet(service, items):
                 item.get('item_name', ''),            # B: Item Name
                 item.get('category', ''),             # C: Category
                 item.get('status', ''),               # D: Status
-                '',                                   # E: Customer/Hospice Name (empty)
-                '',                                   # F: Pickup Date (empty)
-                '',                                   # G: Condition (EMPTY - dropdown)
-                '',                                   # H: Location (EMPTY - dropdown)
+                '',                                   # E: Customer/Hospice Name
+                '',                                   # F: Pickup Date
+                '',                                   # G: Condition (dropdown)
+                '',                                   # H: Location
                 '',                                   # I: (empty)
                 item.get('serial', ''),               # J: Serial/Lot Number
                 '',                                   # K: Purchase Date
@@ -225,6 +309,7 @@ def append_to_sheet(service, items):
             ]
             rows.append(row)
         
+        # Append data
         sheet.values().append(
             spreadsheetId=SHEET_ID,
             range='A:O',
@@ -232,6 +317,10 @@ def append_to_sheet(service, items):
             insertDataOption='INSERT_ROWS',
             body={'values': rows}
         ).execute()
+        
+        # Apply dropdown validation to new rows
+        sheet_gid = get_sheet_id(service)
+        apply_data_validation(service, sheet_gid, start_row, len(rows))
         
         return True, len(rows)
         
@@ -266,10 +355,8 @@ def main():
         st.write("✅ Detects multiple devices")
         st.write("✅ Each device = separate row")
         st.write("✅ Auto Item ID (DME-XXX)")
+        st.write("✅ Auto Dropdowns")
         st.write("✅ ZIP file support")
-        
-        st.header("📝 Note")
-        st.info("Condition & Location: Use dropdown in Google Sheet after adding")
     
     # Initialize session state
     if 'all_devices' not in st.session_state:
@@ -345,9 +432,6 @@ def main():
     if st.session_state.all_devices:
         st.subheader(f"Step 3: Review {len(st.session_state.all_devices)} Device(s)")
         
-        # Info box
-        st.info("💡 **Condition** و **Location** هتختارهم من الـ Dropdown في Google Sheet بعد الإضافة")
-        
         items_to_add = []
         
         for idx, data in enumerate(st.session_state.all_devices):
@@ -361,7 +445,6 @@ def main():
                     st.caption(f"From: {data['filename']}")
                 
                 with col2:
-                    # Row 1: Basic Info
                     c1, c2 = st.columns(2)
                     
                     with c1:
@@ -433,12 +516,11 @@ def main():
                         success, count = append_to_sheet(service, items_to_add)
                         if success:
                             st.balloons()
-                            st.success(f"🎉 Successfully added {count} device(s) to inventory!")
-                            st.warning("⚠️ لا تنسى تختار Condition و Location من الـ Dropdown في Google Sheet!")
+                            st.success(f"🎉 Successfully added {count} device(s) with dropdowns!")
                             st.markdown(f"[📊 Open Google Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
                             st.session_state.all_devices = []
                         else:
-                            st.error("Failed to add to sheet. Check error above.")
+                            st.error("Failed to add to sheet.")
                     else:
                         st.error("Could not connect to Google Sheets.")
 
