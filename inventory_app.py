@@ -252,9 +252,9 @@ def append_to_sheet(service, items):
                 item.get('status', ''),               # D: Status
                 '',                                   # E: Customer/Hospice Name
                 '',                                   # F: Pickup Date
-                '',                                   # G: Condition (dropdown)
-                '',                                   # H: Location (dropdown)
-                '',                                   # I: (empty)
+                None,                                 # G: Condition (dropdown)
+                None,                                 # H: Available in Stock
+                None,                                 # I: Location
                 item.get('serial', ''),               # J: Serial/Lot Number
                 '',                                   # K: Purchase Date
                 '',                                   # L: Warranty Expiration
@@ -267,7 +267,7 @@ def append_to_sheet(service, items):
         sheet.values().append(
             spreadsheetId=SHEET_ID,
             range='A:O',
-            valueInputOption='RAW',
+            valueInputOption='USER_ENTERED',
             insertDataOption='INSERT_ROWS',
             body={'values': rows}
         ).execute()
