@@ -1,5 +1,5 @@
 """
-DME Pro Inventory System - EXACT DROPDOWN VALUES
+DME Pro Inventory System - IMPROVED AI EXTRACTION
 """
 
 import streamlit as st
@@ -22,6 +22,7 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 # Get secrets from Streamlit Cloud
 SHEET_ID = st.secrets["SHEET_ID"]
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+
 # ============ EXACT VALUES FROM GOOGLE SHEET DROPDOWNS ============
 
 # Column D - Status
@@ -31,7 +32,7 @@ STATUS_OPTIONS = [
     "Sold"
 ]
 
-# Column B - Item Name (بالظبط من الـ Sheet)
+# Column B - Item Name
 ITEM_NAMES = [
     "Canes",
     "Commode chairs",
@@ -66,7 +67,7 @@ ITEM_NAMES = [
     "Lambs Wool Pads"
 ]
 
-# Column C - Category (بالظبط من الـ Sheet)
+# Column C - Category
 CATEGORIES = [
     "Mobility Aids",
     "Respiratory Devices",
@@ -93,7 +94,7 @@ CATEGORIES = [
     "Mobility"
 ]
 
-# ================== AI EXTRACTION ==================
+# ================== AI EXTRACTION - IMPROVED ==================
 
 def extract_equipment_data(image_bytes):
     try:
@@ -101,46 +102,45 @@ def extract_equipment_data(image_bytes):
         model = genai.GenerativeModel('gemini-2.0-flash')
         img = Image.open(io.BytesIO(image_bytes))
         
-        prompt = f"""Analyze this medical equipment image.
+        prompt = f"""You are an expert at reading medical equipment labels and extracting data.
 
-You MUST choose item_name from this EXACT list (use exact spelling and capitalization):
-{json.dumps(ITEM_NAMES, indent=2)}
+TASK: Carefully analyze this image of medical equipment.
 
-You MUST choose category from this EXACT list (use exact spelling and capitalization):
-{json.dumps(CATEGORIES, indent=2)}
+IMPORTANT - READ ALL TEXT IN THE IMAGE:
+1. Look for ANY serial numbers, lot numbers, or ID numbers on labels/stickers
+2. Look for manufacturer/brand names (Airgas, Invacare, Drive Medical, etc.)
+3. Look for model numbers
+4. Count how many separate devices are in the image
 
-Mapping examples:
-- Oxygen tank/cylinder → "Oxygen equipment"
-- Walking cane → "Canes"
-- Hospital bed → "Hospital beds"
-- Wheelchair → "Wheelchairs"
-- CPAP/BiPAP → "CPAP machines"
-- Nebulizer → "Nebulizers"
-- Walker/Rollator → "Walkers"
-- Commode → "Commode chairs" or "Bedside Commodes"
-- Shower chair → "Shower Chairs"
-- Crutches → "Crutches"
-- Patient lift → "Patient lifts"
-- Scooter → "Mobility Scooters"
-- Blood pressure monitor → "Blood Pressure Monitors"
-- Glucose meter → "Glucose Meters"
-- Mattress → "Mattresses"
-- Overbed table → "Overbed Tables"
-- Grab bar → "Grab Bars"
-- Infusion/IV pump → "Infusion pumps"
-- Suction machine → "Suction pumps"
+SERIAL NUMBER TIPS:
+- Look for labels with "SN:", "S/N:", "Serial:", "Lot:", "LOT#", "REF:"
+- Check the cylinder body, tags, stickers, and any attached labels
+- Oxygen cylinders often have serial numbers stamped on the neck or on tags
+- Format examples: "W1063072PB01", "SN12345", "LOT-2024-001"
 
-Return JSON with EXACT values from lists:
+For item_name, choose from this EXACT list:
+{json.dumps(ITEM_NAMES)}
+
+For category, choose from this EXACT list:
+{json.dumps(CATEGORIES)}
+
+Return a JSON with ALL devices found:
 {{
   "devices": [
     {{
       "item_name": "Oxygen equipment",
       "category": "Respiratory Devices",
-      "serial": "ABC123",
-      "manufacturer": "Brand"
+      "serial": "THE_SERIAL_NUMBER_YOU_READ",
+      "manufacturer": "THE_BRAND_NAME_YOU_READ",
+      "model": "MODEL_IF_VISIBLE"
     }}
   ]
 }}
+
+CRITICAL: 
+- Read the ACTUAL serial number from the image - don't leave it empty!
+- If multiple devices, list each with its own serial number
+- If you truly cannot read the serial, write "Not visible"
 
 Return ONLY valid JSON."""
 
@@ -160,12 +160,12 @@ Return ONLY valid JSON."""
         data = json.loads(text)
         devices = data.get('devices', [data])
         
-        # Validate - make sure values exist in lists
+        # Validate values
         for device in devices:
             if device.get('item_name') not in ITEM_NAMES:
-                device['item_name'] = ITEM_NAMES[9]  # Default: Oxygen equipment
+                device['item_name'] = ITEM_NAMES[9]  # Oxygen equipment
             if device.get('category') not in CATEGORIES:
-                device['category'] = CATEGORIES[1]  # Default: Respiratory Devices
+                device['category'] = CATEGORIES[1]  # Respiratory Devices
         
         return devices
         
@@ -252,8 +252,8 @@ def append_to_sheet(service, items):
                 item.get('status', ''),               # D: Status
                 '',                                   # E: Customer/Hospice Name
                 '',                                   # F: Pickup Date
-                '',                                   # G: Condition
-                '',                                   # H: Location
+                '',                                   # G: Condition (dropdown)
+                '',                                   # H: Location (dropdown)
                 '',                                   # I: (empty)
                 item.get('serial', ''),               # J: Serial/Lot Number
                 '',                                   # K: Purchase Date
@@ -293,7 +293,7 @@ def main():
     with st.sidebar:
         st.header("📊 Sheet")
         st.markdown(f"[📄 Open Sheet](https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit)")
-        st.success("✅ Dropdown values matched!")
+        st.success("✅ Improved AI extraction!")
     
     if 'all_devices' not in st.session_state:
         st.session_state.all_devices = []
@@ -319,8 +319,10 @@ def main():
         if st.button("🔍 Extract Equipment", type="primary", use_container_width=True):
             st.session_state.all_devices = []
             progress = st.progress(0)
+            status_text = st.empty()
             
             for idx, img_data in enumerate(all_images):
+                status_text.text(f"🔍 Reading labels from {img_data['filename']}...")
                 devices = extract_equipment_data(img_data['bytes'])
                 for device in devices:
                     st.session_state.all_devices.append({
@@ -331,6 +333,7 @@ def main():
                     })
                 progress.progress((idx + 1) / len(all_images))
             
+            status_text.text("✅ Done!")
             st.rerun()
     
     # Step 3
@@ -340,11 +343,12 @@ def main():
         items_to_add = []
         
         for idx, data in enumerate(st.session_state.all_devices):
-            with st.expander(f"#{idx+1}: {data['extracted'].get('item_name', 'Unknown')}", expanded=True):
+            serial_preview = data['extracted'].get('serial', 'No serial')[:20]
+            with st.expander(f"#{idx+1}: {data['extracted'].get('item_name', 'Unknown')} | {serial_preview}", expanded=True):
                 col1, col2 = st.columns([1, 3])
                 
                 with col1:
-                    st.image(data['image_bytes'], width=100)
+                    st.image(data['image_bytes'], width=150)
                 
                 with col2:
                     c1, c2 = st.columns(2)
@@ -354,14 +358,29 @@ def main():
                         item_idx = ITEM_NAMES.index(item_value) if item_value in ITEM_NAMES else 0
                         
                         item_name = st.selectbox("Item Name:", ITEM_NAMES, index=item_idx, key=f"name_{idx}")
-                        serial = st.text_input("Serial:", value=data['extracted'].get('serial', ''), key=f"serial_{idx}")
+                        
+                        serial = st.text_input(
+                            "Serial/Lot Number:", 
+                            value=data['extracted'].get('serial', ''), 
+                            key=f"serial_{idx}",
+                            help="Read from image or enter manually"
+                        )
                     
                     with c2:
                         cat_value = data['extracted'].get('category', CATEGORIES[0])
                         cat_idx = CATEGORIES.index(cat_value) if cat_value in CATEGORIES else 0
                         
                         category = st.selectbox("Category:", CATEGORIES, index=cat_idx, key=f"cat_{idx}")
-                        manufacturer = st.text_input("Manufacturer:", value=data['extracted'].get('manufacturer', ''), key=f"mfr_{idx}")
+                        
+                        manufacturer = st.text_input(
+                            "Manufacturer:", 
+                            value=data['extracted'].get('manufacturer', ''), 
+                            key=f"mfr_{idx}"
+                        )
+                    
+                    # Show what AI detected
+                    if data['extracted'].get('serial'):
+                        st.caption(f"🤖 AI detected serial: **{data['extracted'].get('serial')}**")
                     
                     items_to_add.append({
                         'item_name': item_name,
